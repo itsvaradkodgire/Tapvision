@@ -3,7 +3,82 @@ import speech_recognition as sr
 import pyttsx3
 from gtts import gTTS
 import os
-from text_utils import is_internet_available # Import from text_utils
+import sys
+import subprocess
+import tempfile
+from text_utils import is_internet_available
+
+
+# --- Shared pyttsx3 engine (re-created on error) ---
+_tts_engine = None
+
+def _get_pyttsx3_engine():
+    global _tts_engine
+    if _tts_engine is None:
+        _tts_engine = pyttsx3.init()
+        _tts_engine.setProperty("rate", 155)   # slightly slower for clarity
+    return _tts_engine
+
+
+def _play_mp3(path):
+    """Play an MP3 file using the OS default audio player (no GUI needed)."""
+    try:
+        if sys.platform == "darwin":
+            subprocess.run(["afplay", path], check=True)
+        elif sys.platform.startswith("linux"):
+            for player in [["mpg123"], ["mpg321"], ["ffplay", "-nodisp", "-autoexit"]]:
+                try:
+                    subprocess.run(player + [path], check=True,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    return
+                except (FileNotFoundError, subprocess.CalledProcessError):
+                    continue
+        elif sys.platform == "win32":
+            os.startfile(path)
+    except Exception as e:
+        print(f"[TapVision] Audio playback error: {e}")
+
+
+def speak_now(text, lang="en"):
+    """
+    Speak text immediately on the local machine — no browser required.
+    Used by watcher.py for the fully hands-free accessibility pipeline.
+
+    - Online + non-English  → gTTS via OS audio player
+    - Online + English      → gTTS via OS audio player
+    - Offline               → pyttsx3 (English only)
+    """
+    if not text or not text.strip():
+        return
+
+    # Truncate very long passages so the user isn't waiting forever
+    words = text.split()
+    if len(words) > 300:
+        text = " ".join(words[:300]) + " … content continues."
+
+    print(f"[TapVision] Speaking: {text[:80]}{'…' if len(text) > 80 else ''}")
+
+    if is_internet_available():
+        try:
+            tts = gTTS(text=text, lang=lang)
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+                path = tmp.name
+            tts.save(path)
+            _play_mp3(path)
+            os.remove(path)
+            return
+        except Exception as e:
+            print(f"[TapVision] gTTS error: {e} — falling back to pyttsx3")
+
+    # Offline fallback
+    try:
+        global _tts_engine
+        engine = _get_pyttsx3_engine()
+        engine.say(text)
+        engine.runAndWait()
+    except Exception as e:
+        print(f"[TapVision] pyttsx3 error: {e}")
+        _tts_engine = None  # force re-init next call
 
 # --- Speech Recognition ---
 def recognize_speech_from_mic(prompt="\U0001f3a4 Listening... Please speak now.", timeout_seconds=5):

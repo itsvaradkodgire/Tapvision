@@ -1,50 +1,149 @@
-import streamlit as st
+import base64
 import os
+import tempfile
+
+import streamlit as st
+from gtts import gTTS
+
 from text_utils import read_text, is_internet_available
 from speech_utils import recognize_speech_from_mic, text_to_speech_auto
 from nlp_utils import load_translation_models, translate_text, load_summarizer, summarize_text
 
-# --- Configuration and Initializations ---
-st.set_page_config(page_title="TapVision: Text & Speech AI", layout="wide", initial_sidebar_state="expanded")
+# ── Page config ───────────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="TapVision: Text & Speech AI",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-# Initialize session state
+# ── Session state ─────────────────────────────────────────────────────────────
 if "content" not in st.session_state:
     st.session_state.content = ""
 if "processed_content" not in st.session_state:
     st.session_state.processed_content = ""
 if "selected_language_code" not in st.session_state:
     st.session_state.selected_language_code = "en"
+if "accessibility_mode" not in st.session_state:
+    st.session_state.accessibility_mode = False
 
-# Load NLP models (cached for performance)
+# ── Load NLP models (cached) ──────────────────────────────────────────────────
 translation_models, translation_tokenizers = load_translation_models()
 summarizer_pipeline = load_summarizer()
 
-# Supported languages
 LANGUAGE_MAP = {
     "english": "en",
-    "hindi": "hi",
-    "french": "fr",
-    "german": "de",
+    "hindi":   "hi",
+    "french":  "fr",
+    "german":  "de",
     "spanish": "es",
 }
 
-# --- Sidebar ---
-st.sidebar.title("About TapVision")
+# ── Accessibility helpers ─────────────────────────────────────────────────────
+
+def _autoplay_tts(text, lang="en"):
+    """
+    Generate audio with gTTS and inject an autoplay <audio> tag.
+    Used in Accessibility Mode so results are spoken without any click.
+    Silently skips if offline or if text is empty.
+    """
+    if not text or not text.strip():
+        return
+    if not is_internet_available():
+        return
+    # Limit to 300 words so the autoplay isn't overwhelming
+    words = text.split()
+    if len(words) > 300:
+        text = " ".join(words[:300]) + " … content continues."
+    try:
+        tts = gTTS(text=text, lang=lang)
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+            path = tmp.name
+        tts.save(path)
+        with open(path, "rb") as f:
+            audio_bytes = f.read()
+        os.remove(path)
+        b64 = base64.b64encode(audio_bytes).decode()
+        st.markdown(
+            f'<audio autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>',
+            unsafe_allow_html=True,
+        )
+    except Exception:
+        pass  # Non-fatal: user can still click the manual TTS button
+
+
+def _apply_high_contrast():
+    st.markdown(
+        """
+        <style>
+        /* High-contrast accessibility theme */
+        .stApp { background-color: #000000 !important; color: #FFFFFF !important; }
+        .stTextArea textarea, .stTextInput input {
+            background-color: #1a1a1a !important;
+            color: #FFFF00 !important;
+            font-size: 1.15rem !important;
+            border: 2px solid #FFFF00 !important;
+        }
+        label, .stMarkdown p, .stMarkdown li { color: #FFFFFF !important; font-size: 1.1rem !important; }
+        .stButton > button {
+            background-color: #FFFF00 !important;
+            color: #000000 !important;
+            font-weight: bold !important;
+            font-size: 1rem !important;
+            border: 2px solid #FFFFFF !important;
+        }
+        .stAlert { border-left: 4px solid #FFFF00 !important; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ── Sidebar ───────────────────────────────────────────────────────────────────
+st.sidebar.title("TapVision")
+
+# Accessibility Mode toggle
+st.session_state.accessibility_mode = st.sidebar.toggle(
+    "♿ Accessibility Mode",
+    value=st.session_state.accessibility_mode,
+    help="Automatically reads every result aloud. Best used with watcher.py for fully hands-free access.",
+)
+
+if st.session_state.accessibility_mode:
+    _apply_high_contrast()
+    st.sidebar.success("Accessibility Mode ON — results will be spoken automatically.")
+
+st.sidebar.markdown("---")
 st.sidebar.info(
-    "TapVision is an intelligent application designed to make information "
-    "accessible. It extracts text from various sources, translates, summarizes, "
-    "and converts it into speech, all through intuitive interactions."
+    "TapVision extracts text from any source, summarizes it, "
+    "translates it into your language, and reads it aloud."
+)
+st.sidebar.markdown("**Supported languages:** English · Hindi · French · German · Spanish")
+st.sidebar.markdown("---")
+
+# Watcher callout in sidebar
+st.sidebar.markdown("### Hands-Free Mode")
+st.sidebar.markdown(
+    "For fully automated, screen-free access run:\n"
+    "```\npython watcher.py\n```\n"
+    "Then drop any file into **~/TapVision/inbox/** — "
+    "TapVision will extract, summarize, and read it aloud automatically."
 )
 st.sidebar.markdown("---")
-st.sidebar.markdown("**Supported languages:** English, Hindi, French, German, Spanish")
-st.sidebar.markdown("---")
-st.sidebar.markdown("Developed with ❤️ using Streamlit, Hugging Face, and more.")
+st.sidebar.markdown("Made with ❤️ for accessibility")
 
-# --- Title ---
-st.title("🧲 TapVision: Text & Speech AI")
-st.markdown("### Extract, Translate, Summarize, and Listen to Your Content!")
+# ── Main UI ───────────────────────────────────────────────────────────────────
+st.title("TapVision: Text & Speech AI")
+st.markdown("#### Extract · Translate · Summarize · Listen")
 
-# --- Input Section ---
+# Hands-free banner
+if st.session_state.accessibility_mode:
+    st.info(
+        "♿ **Accessibility Mode is ON.**  "
+        "Every result will be read aloud automatically after processing.  "
+        "For a fully screen-free experience, run `python watcher.py` instead."
+    )
+
+# ── 1. Input ──────────────────────────────────────────────────────────────────
 st.subheader("1. Provide Your Content")
 input_method = st.radio(
     "Choose your input method:",
@@ -55,7 +154,7 @@ input_method = st.radio(
 
 if input_method == "Upload File":
     uploaded_file = st.file_uploader(
-        "📂 Upload a file (PDF, DOCX, EPUB, TXT, or Image)",
+        "Upload a file (PDF, DOCX, EPUB, TXT, or Image)",
         type=["pdf", "docx", "epub", "txt", "jpg", "jpeg", "png"],
     )
     if uploaded_file:
@@ -64,165 +163,158 @@ if input_method == "Upload File":
         file_size = uploaded_file.tell() / (1024 * 1024)
         uploaded_file.seek(0)
         if file_size > MAX_SIZE_MB:
-            st.error(f"File too large! {file_size:.2f} MB exceeds {MAX_SIZE_MB} MB limit.")
+            st.error(f"File too large ({file_size:.1f} MB). Maximum is {MAX_SIZE_MB} MB.")
         else:
-            file_type = uploaded_file.name.split(".")[-1].lower()
-            with st.spinner(f"Extracting text from {file_type.upper()}..."):
+            file_type = uploaded_file.name.rsplit(".", 1)[-1].lower()
+            with st.spinner(f"Extracting text from {file_type.upper()}…"):
                 extracted = read_text(file_obj=uploaded_file, file_type=file_type)
             if extracted:
                 st.session_state.content = extracted
                 st.session_state.processed_content = extracted
+                if st.session_state.accessibility_mode:
+                    word_count = len(extracted.split())
+                    _autoplay_tts(f"File loaded. The document contains approximately {word_count} words.")
 
 elif input_method == "Enter URL":
-    url_input = st.text_input("🌐 Enter a URL (e.g., https://www.example.com)")
+    url_input = st.text_input("Enter a URL (e.g., https://www.example.com)")
     if url_input:
         if not is_internet_available():
-            st.error("❌ No internet connection detected. Please check your connection.")
+            st.error("No internet connection detected.")
         else:
-            with st.spinner("Fetching and extracting text from URL..."):
+            with st.spinner("Fetching content from URL…"):
                 extracted = read_text(url=url_input)
             if extracted:
                 st.session_state.content = extracted
                 st.session_state.processed_content = extracted
+                if st.session_state.accessibility_mode:
+                    _autoplay_tts(f"Page loaded. {len(extracted.split())} words extracted.")
 
 elif input_method == "Paste Text":
-    pasted_text = st.text_area("✍️ Paste your text here", height=200)
+    pasted_text = st.text_area("Paste your text here", height=200)
     if pasted_text:
         st.session_state.content = pasted_text.strip()
         st.session_state.processed_content = pasted_text.strip()
 
-# Display extracted content
+# ── 2. Preview ────────────────────────────────────────────────────────────────
 if st.session_state.content:
     st.subheader("2. Extracted Content")
-    st.info("Review the extracted text below.")
     st.text_area(
-        "📝 Content for Processing",
+        "Content for Processing",
         st.session_state.content,
-        height=300,
+        height=250,
         key="original_content_display",
     )
 else:
-    st.warning("No content available. Please upload a file, enter a URL, or paste text.")
+    st.warning("No content yet. Upload a file, enter a URL, or paste text above.")
 
-# --- Processing Section ---
+# ── 3. Process ────────────────────────────────────────────────────────────────
 if st.session_state.content:
     st.subheader("3. Process Your Content")
 
-    # ---- Summarization ----
+    # ── Summarisation ─────────────────────────────────────────────────────────
     st.markdown("#### Summarization")
-    col_sum1, col_sum2 = st.columns(2)
+    col_s1, col_s2 = st.columns(2)
 
-    with col_sum1:
-        if st.button("📝 Summarize"):
-            with st.spinner("Summarizing text..."):
+    with col_s1:
+        if st.button("Summarize"):
+            with st.spinner("Summarizing…"):
                 result = summarize_text(st.session_state.content, summarizer_pipeline)
             st.session_state.processed_content = result
-            st.success("Text summarized successfully!")
+            st.success("Done!")
+            st.text_area("Summary", result, height=180, key="sum_display")
+            if st.session_state.accessibility_mode:
+                _autoplay_tts(f"Summary: {result}")
 
-    with col_sum2:
-        if st.button("🎤 Summarize via Voice"):
+    with col_s2:
+        if st.button("Summarize via Voice"):
             command = recognize_speech_from_mic()
-            if command and any(w in command.lower() for w in ["summarize", "sumarize", "summarise"]):
-                with st.spinner("Summarizing text..."):
+            if command and any(w in command for w in ("summarize", "sumarize", "summarise")):
+                with st.spinner("Summarizing…"):
                     result = summarize_text(st.session_state.content, summarizer_pipeline)
                 st.session_state.processed_content = result
-                st.success("Text summarized successfully!")
+                st.success("Done!")
+                st.text_area("Summary", result, height=180, key="sum_voice_display")
+                if st.session_state.accessibility_mode:
+                    _autoplay_tts(f"Summary: {result}")
             elif command:
-                st.warning("Command not recognized. Please say 'summarize'.")
+                st.warning("Say 'summarize' to trigger summarization.")
             else:
-                st.warning("Speech recognition failed. Please try again.")
+                st.warning("No speech detected. Please try again.")
 
-    if st.session_state.processed_content and st.session_state.processed_content != st.session_state.content:
-        st.text_area(
-            "📖 Summarized Text",
-            st.session_state.processed_content,
-            height=200,
-            key="summarized_display",
-        )
-
-    # ---- Translation ----
+    # ── Translation ───────────────────────────────────────────────────────────
     st.markdown("#### Translation")
-    st.caption("Supported languages: English, Hindi, French, German, Spanish")
+    st.caption("Supported: English · Hindi · French · German · Spanish")
 
-    col_lang, col_voice_lang = st.columns([3, 1])
-    with col_lang:
+    col_l1, col_l2 = st.columns([3, 1])
+    with col_l1:
         language_input = st.text_input(
-            "Type target language:",
-            placeholder="e.g. Hindi, French, German, Spanish, English",
-            key="lang_type_input",
+            "Target language:",
+            placeholder="e.g. Hindi, French, German, Spanish",
+            key="lang_input",
         )
-    with col_voice_lang:
-        st.write("")  # vertical alignment spacer
-        voice_lang_btn = st.button("🎤 Speak Language")
+    with col_l2:
+        st.write("")
+        if st.button("Speak Language"):
+            spoken = recognize_speech_from_mic("Listening for language name…")
+            if spoken:
+                for name in LANGUAGE_MAP:
+                    if name in spoken.lower():
+                        language_input = name
+                        st.info(f"Heard: {name.capitalize()}")
+                        break
+                else:
+                    st.warning(f"Could not match '{spoken}' to a supported language.")
 
-    if voice_lang_btn:
-        spoken = recognize_speech_from_mic("🎤 Listening for language name...")
-        if spoken:
-            for name in LANGUAGE_MAP:
-                if name in spoken.lower():
-                    language_input = name
-                    st.info(f"Recognized language: **{name.capitalize()}**")
-                    break
-            else:
-                st.warning(f"Could not match '{spoken}' to a supported language.")
-
-    if st.button("🌍 Translate") and language_input:
-        normalized = language_input.lower().strip()
-        lang_code = LANGUAGE_MAP.get(normalized, None)
+    if st.button("Translate") and language_input:
+        normalized  = language_input.lower().strip()
+        lang_code   = LANGUAGE_MAP.get(normalized)
         if lang_code is None:
-            st.warning(
-                f"Language '{language_input}' is not supported. "
-                "Choose from: English, Hindi, French, German, Spanish."
-            )
+            st.warning(f"'{language_input}' is not supported. Choose from: English, Hindi, French, German, Spanish.")
         else:
             st.session_state.selected_language_code = lang_code
-            source_text = st.session_state.processed_content or st.session_state.content
-            with st.spinner(f"Translating to {language_input.capitalize()}..."):
-                translated = translate_text(
-                    source_text, lang_code, translation_models, translation_tokenizers
-                )
+            source = st.session_state.processed_content or st.session_state.content
+            with st.spinner(f"Translating to {language_input.capitalize()}…"):
+                translated = translate_text(source, lang_code, translation_models, translation_tokenizers)
             st.session_state.processed_content = translated
-            st.text_area("🌍 Translated Text", translated, height=200, key="translated_display")
+            st.text_area("Translated Text", translated, height=180, key="trans_display")
+            if st.session_state.accessibility_mode:
+                _autoplay_tts(translated, lang=lang_code)
 
-    # ---- Text-to-Speech ----
+    # ── Text-to-Speech ────────────────────────────────────────────────────────
     st.markdown("#### Text-to-Speech")
     tts_source = st.session_state.processed_content or st.session_state.content
+    col_t1, col_t2 = st.columns(2)
 
-    col_tts1, col_tts2 = st.columns(2)
-
-    with col_tts1:
-        if st.button("🔊 Convert to Speech"):
+    with col_t1:
+        if st.button("Convert to Speech"):
             if not tts_source.strip():
-                st.error("No text available to convert to speech.")
+                st.error("No text to convert.")
             else:
                 speech_lang = st.session_state.selected_language_code
                 if not is_internet_available() and speech_lang != "en":
-                    st.warning("No internet — falling back to English (pyttsx3).")
+                    st.warning("No internet — falling back to English.")
                     speech_lang = "en"
-                with st.spinner("Generating audio..."):
+                with st.spinner("Generating audio…"):
                     audio_path = text_to_speech_auto(tts_source, lang=speech_lang)
                 if audio_path and os.path.exists(audio_path):
                     st.audio(audio_path, format="audio/mp3")
                     os.remove(audio_path)
                 else:
-                    st.error("Failed to generate audio. Check your internet connection.")
+                    st.error("Audio generation failed. Check your internet connection.")
 
-    with col_tts2:
-        if st.button("🎤 Convert to Speech via Voice"):
+    with col_t2:
+        if st.button("Convert to Speech via Voice"):
             command = recognize_speech_from_mic()
             if command and "convert to speech" in command.lower():
-                if not tts_source.strip():
-                    st.error("No text available to convert to speech.")
+                speech_lang = st.session_state.selected_language_code
+                with st.spinner("Generating audio…"):
+                    audio_path = text_to_speech_auto(tts_source, lang=speech_lang)
+                if audio_path and os.path.exists(audio_path):
+                    st.audio(audio_path, format="audio/mp3")
+                    os.remove(audio_path)
                 else:
-                    speech_lang = st.session_state.selected_language_code
-                    with st.spinner("Generating audio..."):
-                        audio_path = text_to_speech_auto(tts_source, lang=speech_lang)
-                    if audio_path and os.path.exists(audio_path):
-                        st.audio(audio_path, format="audio/mp3")
-                        os.remove(audio_path)
-                    else:
-                        st.error("Failed to generate audio.")
+                    st.error("Audio generation failed.")
             elif command:
-                st.warning("Command not recognized. Please say 'convert to speech'.")
+                st.warning("Say 'convert to speech' to trigger audio.")
             else:
-                st.warning("Speech recognition failed. Please try again.")
+                st.warning("No speech detected. Please try again.")

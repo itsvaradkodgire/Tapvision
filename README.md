@@ -2,9 +2,9 @@
 
 # TapVision — Text & Speech AI
 
-**Extract · Translate · Summarize · Listen**
+### *Information should be accessible to everyone.*
 
-An intelligent NLP-powered web application that turns documents, images, and web pages into accessible, multi-language, spoken content — all in your browser.
+TapVision is an AI-powered accessibility tool that lets **visually impaired users** extract information from any document, image, or webpage — and have it read aloud, summarized, and translated — entirely hands-free.
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Built%20with-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
@@ -15,40 +15,137 @@ An intelligent NLP-powered web application that turns documents, images, and web
 
 ---
 
-## What is TapVision?
+## The Problem
 
-TapVision bridges the gap between raw content and human understanding. Whether you have a scanned PDF, an image full of text, a long article from the web, or a document in a foreign language, TapVision handles the heavy lifting for you.
+Millions of visually impaired people rely on screen readers and assistive technology every day. But accessing *unstructured* content — a scanned PDF, a photo of a notice board, an article in a foreign language, an EPUB book — still requires significant manual effort. Existing tools either need expensive software, an internet subscription, or a sighted person to help.
 
-It chains together five powerful NLP capabilities — **OCR**, **web scraping**, **summarization**, **translation**, and **text-to-speech** — into a single, clean Streamlit interface. You can drive every feature by clicking a button or speaking a voice command.
+**TapVision solves this.** Drop a file. Hear it. That's it.
+
+---
+
+## Two Ways to Use TapVision
+
+### Mode 1 — Hands-Free Auto-Pipeline (`watcher.py`) ✦ *Designed for blind users*
+
+Run once. No browser. No mouse. No screen.
+
+```bash
+python watcher.py
+```
+
+TapVision watches a folder on your machine (`~/TapVision/inbox/`). The moment you drop a file there — using your screen reader, Finder, a terminal command, or Bluetooth keyboard — it automatically:
+
+1. **Detects** the new file and announces its name
+2. **Extracts** all text (OCR for images, full parsing for PDF/DOCX/EPUB)
+3. **Summarizes** the content using an AI model
+4. **Reads the summary aloud** through your speakers
+5. **Listens** for your follow-up voice commands
+
+```
+You:          [drop report.pdf into ~/TapVision/inbox/]
+
+TapVision:    "New file detected: report.pdf. Extracting text, please wait."
+              "Extraction complete. The document has approximately 1,240 words."
+              "Generating a summary."
+              "Here is the summary: The report covers Q3 financial results..."
+
+You (voice):  "translate to Hindi"
+TapVision:    "Translating to Hindi. Please wait."
+              [reads Hindi translation aloud]
+
+You (voice):  "full text"
+TapVision:    "Reading the full document now."
+              [reads entire document]
+
+You (voice):  "done"
+TapVision:    "Going back to waiting for new files."
+```
+
+**Voice commands available after every file:**
+
+| Say this | Action |
+|---|---|
+| `full text` | Read the entire document aloud |
+| `repeat` | Hear the summary again |
+| `translate to Hindi` | Translate and read in Hindi |
+| `translate to French` | Translate and read in French |
+| `translate to German` | Translate and read in German |
+| `translate to Spanish` | Translate and read in Spanish |
+| `done` / `stop` | Return to waiting for the next file |
+
+Processed files are automatically moved to `~/TapVision/processed/` so the inbox stays clean.
+
+---
+
+### Mode 2 — Web App (`app.py`) ✦ *With Accessibility Mode for sighted helpers*
+
+```bash
+streamlit run app.py
+```
+
+The full browser UI for users who have partial vision, or for a sighted helper assisting someone. Enable **Accessibility Mode** in the sidebar to:
+
+- Automatically read every result aloud the moment it appears (no clicking needed)
+- Switch to a **high-contrast black/yellow theme** for low-vision users
+- Display larger text throughout the interface
+
+---
+
+## How the Pipeline Works
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    INPUT SOURCES                         │
+│  PDF │ DOCX │ EPUB │ TXT │ Image (OCR) │ URL │ Paste    │
+└────────────────────────┬────────────────────────────────┘
+                         │
+                    text_utils.py
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │   Raw Extracted     │
+              │       Text          │
+              └──────────┬──────────┘
+                         │
+                   nlp_utils.py
+                         │
+          ┌──────────────┼──────────────┐
+          ▼              ▼              ▼
+    Summarization   Translation    (original)
+    (BART model)  (MarianMT model)
+          │              │              │
+          └──────────────┼──────────────┘
+                         │
+                  speech_utils.py
+                         │
+          ┌──────────────┼──────────────┐
+          ▼              ▼              ▼
+       speak_now()   gTTS (.mp3)   pyttsx3
+    [watcher mode]  [web app mode] [offline]
+```
 
 ---
 
 ## Features
 
-### Input — Many sources, one workflow
+### Text Extraction — Any Format
 
-| Method | Formats Supported |
+| Source | How |
 |---|---|
-| File Upload | PDF, DOCX, EPUB, TXT, JPG, JPEG, PNG |
-| URL Scraping | Any public web page |
-| Direct Paste | Raw text |
+| PDF | PyMuPDF — preserves multi-column layouts |
+| DOCX | python-docx — paragraphs and tables |
+| EPUB | ebooklib — strips HTML, delivers clean prose |
+| Images (JPG, PNG) | Tesseract OCR — handles scans and photos |
+| Plain Text | UTF-8 with latin-1 fallback |
+| Any URL | BeautifulSoup — removes ads, nav, footers |
 
-- **PDF** extraction via PyMuPDF (preserves multi-column layouts)
-- **OCR** for images using Tesseract — handles scanned documents and screenshots
-- **EPUB** reader that strips HTML markup and delivers clean prose
-- **Web scraping** with BeautifulSoup — removes navigation, ads, and boilerplate
+### AI Summarization
 
----
+Powered by **`facebook/bart-large-cnn`**. Long documents are automatically chunked to stay within the model's token limit — no content is silently dropped regardless of document length. Partial summaries are consolidated into one final result.
 
-### Smart Summarization
+### Multi-Language Translation
 
-Powered by **`facebook/bart-large-cnn`** (a BART model fine-tuned on CNN/DailyMail news). Long documents are automatically split into chunks, each summarized individually, and the partial summaries are consolidated into a final cohesive result — so no content is silently dropped regardless of document length.
-
----
-
-### Multi-language Translation
-
-Powered by **Helsinki-NLP MarianMT** models, the fastest open-source neural translation architecture. Long texts are chunked to respect the 512-token model limit, so entire documents translate correctly.
+Powered by **Helsinki-NLP MarianMT** models — fast, open-source, runs locally after first download.
 
 | Language | Model |
 |---|---|
@@ -57,45 +154,16 @@ Powered by **Helsinki-NLP MarianMT** models, the fastest open-source neural tran
 | English → German | `opus-mt-en-de` |
 | English → Spanish | `opus-mt-en-es` |
 
----
+Long texts are chunked before translation so the full document is translated, not just the first 512 tokens.
 
-### Text-to-Speech (TTS)
+### Text-to-Speech
 
-TapVision intelligently picks the best TTS engine for the situation:
-
-- **Online (gTTS)** — Google Text-to-Speech for high-quality, multi-language audio
-- **Offline fallback (pyttsx3)** — runs fully on-device when internet is unavailable; English only
-
----
-
-### Voice Commands
-
-Interact hands-free using your microphone (powered by Google Web Speech API):
-
-| Say this | Does this |
+| Engine | When used |
 |---|---|
-| *"summarize"* | Summarizes the current content |
-| *"translate to Hindi"* | Translates to the named language |
-| *"convert to speech"* | Plays the processed text aloud |
+| **gTTS** (Google) | Online — high quality, all 5 languages |
+| **pyttsx3** | Offline fallback — English, no internet needed |
 
-Voice and button controls are always available side-by-side — you choose how to interact.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| UI Framework | [Streamlit](https://streamlit.io/) |
-| Summarization | [facebook/bart-large-cnn](https://huggingface.co/facebook/bart-large-cnn) via Hugging Face Transformers |
-| Translation | [Helsinki-NLP MarianMT](https://huggingface.co/Helsinki-NLP) via Hugging Face Transformers |
-| OCR | [Tesseract](https://github.com/tesseract-ocr/tesseract) via pytesseract |
-| PDF parsing | [PyMuPDF (fitz)](https://pymupdf.readthedocs.io/) |
-| DOCX parsing | [python-docx](https://python-docx.readthedocs.io/) |
-| EPUB parsing | [ebooklib](https://docs.sourcefab.com/ebooklib/) |
-| Web scraping | [requests](https://docs.python-requests.org/) + [BeautifulSoup4](https://www.crummy.com/software/BeautifulSoup/) |
-| Text-to-Speech | [gTTS](https://gtts.readthedocs.io/) + [pyttsx3](https://pyttsx3.readthedocs.io/) |
-| Speech Recognition | [SpeechRecognition](https://pypi.org/project/SpeechRecognition/) (Google Web Speech API) |
+In `watcher.py`, audio plays directly through the system speakers (no browser required).
 
 ---
 
@@ -103,11 +171,12 @@ Voice and button controls are always available side-by-side — you choose how t
 
 ```
 TapVision/
-├── app.py              # Streamlit UI, session state, user interactions
-├── text_utils.py       # File readers (PDF, DOCX, EPUB, TXT, image, URL)
-├── nlp_utils.py        # Summarization & translation models + chunking logic
-├── speech_utils.py     # TTS (gTTS / pyttsx3) and speech recognition
-└── requirements.txt    # Python dependencies
+├── watcher.py          ← Hands-free auto-pipeline for blind users  ✦ NEW
+├── app.py              ← Streamlit web app with Accessibility Mode
+├── text_utils.py       ← File readers: PDF, DOCX, EPUB, TXT, image, URL
+├── nlp_utils.py        ← Summarization & translation with chunking
+├── speech_utils.py     ← TTS (gTTS / pyttsx3) + speak_now() for watcher
+└── requirements.txt    ← Python dependencies
 ```
 
 ---
@@ -117,93 +186,101 @@ TapVision/
 ### Prerequisites
 
 - **Python 3.8+**
-- **Tesseract OCR** (required for image-to-text):
+- **Tesseract OCR** (needed for image-to-text):
   - macOS: `brew install tesseract`
-  - Linux (Debian/Ubuntu): `sudo apt-get install tesseract-ocr`
-  - Windows: [Download installer from UB Mannheim](https://tesseract-ocr.github.io/tessdoc/Installation.html) and add it to PATH
+  - Linux: `sudo apt-get install tesseract-ocr`
+  - Windows: [Download from UB Mannheim](https://tesseract-ocr.github.io/tessdoc/Installation.html)
+- **Audio player for `watcher.py`** (for speaking aloud):
+  - macOS: built-in (`afplay`)
+  - Linux: `sudo apt-get install mpg123`
+  - Windows: built-in (`os.startfile`)
 
-### Install and Run
+### Install
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/itsvaradkodgire/Tapvision.git
 cd Tapvision
 
-# 2. Create and activate a virtual environment
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 
-# 3. Install dependencies
 pip install -r requirements.txt
+```
 
-# 4. Launch the app
+> **First run:** Hugging Face downloads BART and MarianMT weights (~1–2 GB). Cached locally after that.
+
+### Run
+
+```bash
+# Hands-free mode (for blind users — no browser needed)
+python watcher.py
+
+# Web app mode
 streamlit run app.py
 ```
 
-The app opens automatically at `http://localhost:8501`.
-
-> **Note:** On first run, Hugging Face will download the BART and MarianMT model weights (~1–2 GB total). They are cached locally after that.
-
 ---
 
-## Usage Guide
+## Ideas for Future Improvements
 
-1. **Choose an input method** — upload a file, paste a URL, or type/paste text directly.
-2. **Review the extracted content** in the preview panel.
-3. **Summarize** — click "Summarize" (or say *"summarize"* via the mic button) to get a concise version.
-4. **Translate** — type the target language (e.g. `French`) and click "Translate".
-5. **Listen** — click "Convert to Speech" to hear the final processed text in the correct language.
+### Core Accessibility
+- [ ] **Wake-word activation** — say *"Hey TapVision"* instead of dropping a file; use `pvporcupine`
+- [ ] **Auto language detection** — detect the document's language and skip manual selection (`langdetect`)
+- [ ] **Real-time OCR from camera** — point a phone/webcam at any text and hear it immediately (`OpenCV`)
+- [ ] **Braille display output** — pipe text to a refreshable Braille display via `liblouis`
 
----
-
-## Potential Improvements
-
-This section outlines what could take TapVision from a project to a production-ready product.
-
-### Model & NLP Upgrades
-- [ ] **Multilingual summarization** — replace BART with `mBART` or `mT5` to summarize non-English documents directly
-- [ ] **Auto language detection** — use `langdetect` to identify the source language and pre-select the right translation direction
-- [ ] **More translation pairs** — add Arabic, Chinese, Japanese, Portuguese using existing MarianMT or NLLB-200 models
-- [ ] **Better chunking** — use sentence-boundary detection (`nltk.sent_tokenize`) instead of word-count splits for more natural chunk boundaries
-- [ ] **Abstractive vs. extractive toggle** — let users choose between BART (abstractive) and `bert-extractive-summarizer` (extractive)
-
-### Input / Extraction
-- [ ] **Multi-file batch upload** — process several documents in one session
-- [ ] **YouTube / video transcript extraction** — use `youtube-transcript-api` to pull captions
-- [ ] **Table & structured data extraction** from PDFs using `camelot` or `pdfplumber`
-- [ ] **Image preprocessing** before OCR — deskew, denoise, and binarize with OpenCV for better accuracy
+### Content & Intelligence
+- [ ] **Multilingual summarization** — summarize non-English documents without translating first (`mBART`)
+- [ ] **Named entity reading** — announce people, dates, and places with emphasis so they're not missed
+- [ ] **Table and figure descriptions** — describe data tables and charts extracted from PDFs
+- [ ] **Sentence-boundary chunking** — use `nltk.sent_tokenize` for more natural chunk splits
 
 ### Voice & Audio
-- [ ] **Wake-word detection** — use `pvporcupine` to listen passively without clicking
-- [ ] **ElevenLabs / Coqui TTS** integration for more natural, expressive voices
-- [ ] **Audio download button** — let users save the generated `.mp3`
-- [ ] **Real-time speech-to-text transcript** displayed on screen as the user speaks
+- [ ] **More expressive voices** — integrate ElevenLabs or Coqui TTS for natural-sounding speech
+- [ ] **Adjustable reading speed** — user says *"read slower"* or *"read faster"*
+- [ ] **Bookmark by voice** — *"remember this position"* and resume a long document later
+- [ ] **Audio download** — save generated `.mp3` for offline listening on any device
 
-### UI / UX
-- [ ] **Dark mode** toggle
-- [ ] **Processing history** — sidebar log of all processed documents in the current session
-- [ ] **Side-by-side view** — original text alongside translated/summarized output
-- [ ] **Copy-to-clipboard button** for every output panel
-- [ ] **Progress bar** for large document processing
+### Reach & Distribution
+- [ ] **Raspberry Pi / single-board device** — run TapVision on a small device with a physical button; press button, drop file, hear result — zero computer literacy required
+- [ ] **WhatsApp / Telegram bot** — send a photo of text to a bot and receive a voice note back
+- [ ] **Docker image** — `docker run tapvision` with zero setup
+- [ ] **Hugging Face Spaces** — free public URL, no installation for anyone
 
-### Performance & Deployment
-- [ ] **Async model loading** with a loading screen so the app feels snappy on startup
-- [ ] **Docker image** for one-command deployment anywhere
-- [ ] **Hugging Face Spaces / Streamlit Community Cloud** deployment for zero-install public access
-- [ ] **API mode** — expose core functions (summarize, translate, TTS) as a FastAPI REST service
-- [ ] **GPU acceleration** — auto-detect CUDA and move models to GPU for 5–10× faster inference on large documents
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Web UI | [Streamlit](https://streamlit.io/) |
+| Summarization | [facebook/bart-large-cnn](https://huggingface.co/facebook/bart-large-cnn) |
+| Translation | [Helsinki-NLP MarianMT](https://huggingface.co/Helsinki-NLP) |
+| OCR | [Tesseract](https://github.com/tesseract-ocr/tesseract) via pytesseract |
+| PDF | [PyMuPDF](https://pymupdf.readthedocs.io/) |
+| DOCX | [python-docx](https://python-docx.readthedocs.io/) |
+| EPUB | [ebooklib](https://github.com/aerkalov/ebooklib) |
+| Web scraping | requests + BeautifulSoup4 |
+| TTS (online) | [gTTS](https://gtts.readthedocs.io/) |
+| TTS (offline) | [pyttsx3](https://pyttsx3.readthedocs.io/) |
+| Speech input | [SpeechRecognition](https://pypi.org/project/SpeechRecognition/) |
+| Folder watching | [watchdog](https://python-watchdog.readthedocs.io/) |
 
 ---
 
 ## Acknowledgements
 
 - [Hugging Face](https://huggingface.co/) for open-source NLP models
-- [Helsinki-NLP](https://github.com/Helsinki-NLP) for the MarianMT translation model suite
+- [Helsinki-NLP](https://github.com/Helsinki-NLP) for the MarianMT translation suite
 - [Facebook AI Research](https://ai.facebook.com/) for the BART summarization model
-- [Streamlit](https://streamlit.io/) for making ML web apps fast to build
+- [Streamlit](https://streamlit.io/) for rapid ML app development
 
 ---
 
 <div align="center">
-Made with ❤️ by <a href="https://github.com/itsvaradkodgire">Varad Kodgire</a>
+
+Built with purpose by <a href="https://github.com/itsvaradkodgire">Varad Kodgire</a>
+
+*Making information accessible — one file at a time.*
+
 </div>
