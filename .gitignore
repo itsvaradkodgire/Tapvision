@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Environment variables / secrets
+.env
+.env.*
+*.env
+
+# Hugging Face model cache (large, auto-downloaded)
+.cache/
+~/.cache/huggingface/
+
+# Generated audio files
+output_audio_*.mp3
+*.mp3
+
+# TapVision runtime folders (created by watcher.py)
+~/TapVision/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Logs
+*.log
