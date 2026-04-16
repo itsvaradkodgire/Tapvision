@@ -3,12 +3,13 @@ pytesseract
 Pillow
 pyttsx3
 python-docx
-PyMuPDF # This is fitz
+PyMuPDF
 requests
 beautifulsoup4
 ebooklib
 gTTS
 SpeechRecognition
 transformers
-torch # Needed for transformers
-sentencepiece # Needed for MarianMT tokenizer
+torch
+sentencepiece
+lxml

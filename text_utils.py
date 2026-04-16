@@ -5,9 +5,11 @@ from docx import Document
 import fitz # PyMuPDF
 import requests
 from bs4 import BeautifulSoup
+import ebooklib
 from ebooklib import epub
 import socket
 import os
+from urllib.parse import urlparse
 
 # Set Tesseract CMD path if not in system PATH
 # On Windows, it might be:
@@ -59,9 +61,8 @@ def read_epub(file_obj):
         book = epub.read_epub(file_obj)
         text = ""
         for item in book.get_items():
-            if item.get_type() == epub.EpubHtml:
+            if item.get_type() == ebooklib.ITEM_DOCUMENT:
                 soup = BeautifulSoup(item.content, 'html.parser')
-                # Get text, clean it up, and append
                 text += soup.get_text(separator=' ', strip=True) + "\n"
         return text
     except Exception as e:
@@ -79,6 +80,10 @@ def read_plain_text(file_obj):
 
 def read_web_page(url):
     """Fetches and extracts readable text content from a web page."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        st.error("❌ Invalid URL. Please enter a valid URL starting with http:// or https://")
+        return ""
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
         response = requests.get(url, headers=headers, timeout=10)
